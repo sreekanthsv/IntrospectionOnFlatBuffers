@@ -1,0 +1,9 @@
+include "person.fbs";
+
+namespace example;
+
+table People {
+  persons: [Person];
+}
+
+root_type People;

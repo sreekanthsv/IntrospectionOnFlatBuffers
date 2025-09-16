@@ -26,7 +26,10 @@ endif()
 set(SCHEMAS
   ${CMAKE_CURRENT_SOURCE_DIR}/schema/telemetry.fbs
   ${CMAKE_CURRENT_SOURCE_DIR}/schema/person.fbs
+  ${CMAKE_CURRENT_SOURCE_DIR}/schema/people.fbs
+  ${CMAKE_CURRENT_SOURCE_DIR}/schema/devices.fbs
   ${CMAKE_CURRENT_SOURCE_DIR}/schema/device.fbs
+  ${CMAKE_CURRENT_SOURCE_DIR}/schema/shapeholders.fbs
   ${CMAKE_CURRENT_SOURCE_DIR}/schema/union_enum.fbs
 )
 
@@ -36,13 +39,19 @@ set(REFLECTION_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/reflection)
 set(GENERATED_HEADERS
   ${REFLECTION_OUT_DIR}/telemetry_generated.h
   ${REFLECTION_OUT_DIR}/person_generated.h
+  ${REFLECTION_OUT_DIR}/people_generated.h
+  ${REFLECTION_OUT_DIR}/devices_generated.h
   ${REFLECTION_OUT_DIR}/device_generated.h
+  ${REFLECTION_OUT_DIR}/shapeholders_generated.h
   ${REFLECTION_OUT_DIR}/union_enum_generated.h
 )
 set(GENERATED_BFBS
   ${REFLECTION_OUT_DIR}/telemetry.bfbs
   ${REFLECTION_OUT_DIR}/person.bfbs
+  ${REFLECTION_OUT_DIR}/people.bfbs
+  ${REFLECTION_OUT_DIR}/devices.bfbs
   ${REFLECTION_OUT_DIR}/device.bfbs
+  ${REFLECTION_OUT_DIR}/shapeholders.bfbs
   ${REFLECTION_OUT_DIR}/union_enum.bfbs
 )
 

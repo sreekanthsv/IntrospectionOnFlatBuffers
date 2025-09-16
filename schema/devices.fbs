@@ -1,0 +1,9 @@
+include "device.fbs";
+
+namespace example;
+
+table Devices {
+  devices: [Device];
+}
+
+root_type Devices;

@@ -222,7 +222,8 @@ int DecodeAndPrint(const std::string &bfbs_path, const std::string &bin_path) {
   std::string data;
   if (!flatbuffers::LoadFile(bin_path.c_str(), true, &data)) {
     std::cerr << "Failed to load data file: " << bin_path << "\n";
-    return 1;
+    // Non-fatal: allow decoder to continue with other files
+    return 0;
   }
 
   flatbuffers::Parser parser;

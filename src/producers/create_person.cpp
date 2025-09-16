@@ -1,14 +1,15 @@
 #include <flatbuffers/flatbuffers.h>
-#include "person_generated.h"
+#include "people_generated.h"
 #include <fstream>
 
 int main() {
-  // Produce several person instances into separate binaries to demonstrate multiple objects.
+  // Produce a single people.bin which contains a vector<Person> (table-like behavior).
+  flatbuffers::FlatBufferBuilder builder;
+  std::vector<flatbuffers::Offset<example::Person>> persons;
   for (int i = 0; i < 3; ++i) {
-    flatbuffers::FlatBufferBuilder builder;
     std::string name_str = std::string("Person_") + std::to_string(i);
-    std::string street_str = std::string("") + std::to_string(100 + i) + std::string(" Main St");
-    std::string city_str = i % 2 == 0 ? "Metropolis" : "Smallville";
+    std::string street_str = std::to_string(100 + i) + std::string(" Main St");
+    std::string city_str = (i % 2 == 0) ? "Metropolis" : "Smallville";
 
     auto name = builder.CreateString(name_str);
     auto street = builder.CreateString(street_str);
@@ -21,13 +22,15 @@ int main() {
     pb.add_name(name);
     pb.add_age(static_cast<uint16_t>(20 + i));
     pb.add_address(addr);
-    auto root = pb.Finish();
-    builder.Finish(root);
-
-    std::string fname = std::string("person_") + std::to_string(i) + ".bin";
-    std::ofstream out(fname, std::ios::binary);
-    out.write(reinterpret_cast<const char*>(builder.GetBufferPointer()), builder.GetSize());
-    out.close();
+    persons.push_back(pb.Finish());
   }
+
+  auto persons_vec = builder.CreateVector(persons);
+  auto people = example::CreatePeople(builder, persons_vec);
+  builder.Finish(people);
+
+  std::ofstream out("people.bin", std::ios::binary);
+  out.write(reinterpret_cast<const char*>(builder.GetBufferPointer()), builder.GetSize());
+  out.close();
   return 0;
 }

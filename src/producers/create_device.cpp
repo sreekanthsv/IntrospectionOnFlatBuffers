@@ -1,11 +1,11 @@
 #include <flatbuffers/flatbuffers.h>
-#include "device_generated.h"
+#include "devices_generated.h"
 #include <fstream>
 
 int main() {
-  // Produce multiple device instances
+  flatbuffers::FlatBufferBuilder builder;
+  std::vector<flatbuffers::Offset<example::Device>> devices;
   for (int i = 0; i < 2; ++i) {
-    flatbuffers::FlatBufferBuilder builder;
     std::string id_str = std::string("dev_") + std::to_string(i);
     auto dev_id = builder.CreateString(id_str);
     auto s1 = builder.CreateString("temp");
@@ -24,13 +24,15 @@ int main() {
     db.add_online(i % 2 == 0);
     db.add_readings(readings_vec);
     db.add_tags(tags);
-    auto root = db.Finish();
-    builder.Finish(root);
-
-    std::string fname = std::string("device_") + std::to_string(i) + ".bin";
-    std::ofstream out(fname, std::ios::binary);
-    out.write(reinterpret_cast<const char*>(builder.GetBufferPointer()), builder.GetSize());
-    out.close();
+    devices.push_back(db.Finish());
   }
+
+  auto devices_vec = builder.CreateVector(devices);
+  auto all = example::CreateDevices(builder, devices_vec);
+  builder.Finish(all);
+
+  std::ofstream out("devices.bin", std::ios::binary);
+  out.write(reinterpret_cast<const char*>(builder.GetBufferPointer()), builder.GetSize());
+  out.close();
   return 0;
 }

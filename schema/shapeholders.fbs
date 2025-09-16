@@ -1,0 +1,9 @@
+include "union_enum.fbs";
+
+namespace demo;
+
+table ShapeHolders {
+  holders: [ShapeHolder];
+}
+
+root_type ShapeHolders;
