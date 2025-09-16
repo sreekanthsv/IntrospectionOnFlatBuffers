@@ -1,0 +1,15 @@
+namespace example;
+
+table Reading {
+  sensor: string;
+  value: double;
+}
+
+table Device {
+  device_id: string;
+  online: bool;
+  readings: [Reading];
+  tags: [string];
+}
+
+root_type Device;

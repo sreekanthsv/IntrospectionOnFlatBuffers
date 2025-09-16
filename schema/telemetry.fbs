@@ -1,0 +1,16 @@
+namespace telemetry;
+
+table Sensor {
+  id: string;
+  value: double;
+  unit: string;
+}
+
+table Telemetry {
+  timestamp: ulong;
+  device_id: string;
+  sensors: [Sensor];
+  status: string;
+}
+
+root_type Telemetry;

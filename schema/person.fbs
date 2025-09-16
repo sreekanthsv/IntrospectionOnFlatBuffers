@@ -1,0 +1,16 @@
+namespace example;
+
+table Address {
+  street: string;
+  city: string;
+  zip: ushort;
+}
+
+table Person {
+  id: ulong;
+  name: string;
+  age: ushort;
+  address: Address;
+}
+
+root_type Person;

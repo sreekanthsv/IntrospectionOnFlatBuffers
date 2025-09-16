@@ -1,0 +1,22 @@
+namespace demo;
+
+enum Color : byte { Red = 0, Green = 1, Blue = 2 }
+
+table Circle {
+  radius:float;
+}
+
+table Rectangle {
+  width:float;
+  height:float;
+}
+
+union Shape { Circle, Rectangle }
+
+table ShapeHolder {
+  id:uint;
+  shape:Shape;
+  color:Color; // separate enum field to exercise enum-name resolution
+}
+
+root_type ShapeHolder;
