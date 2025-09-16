@@ -266,3 +266,240 @@ int DecodeAndPrint(const std::string &bfbs_path, const std::string &bin_path) {
   std::cout << std::endl;
   return 0;
 }
+
+// Helper: find a field by name in an object descriptor
+static const reflection::Field *FindFieldByName(const reflection::Object *obj, const std::string &name) {
+  if (!obj || !obj->fields()) return nullptr;
+  for (auto it = obj->fields()->begin(); it != obj->fields()->end(); ++it) {
+    auto f = *it;
+    if (!f || !f->name()) continue;
+    if (f->name()->str() == name) return f;
+  }
+  return nullptr;
+}
+
+#include "select_result_generated.h"
+
+// Helper: split a path like "address.city" into components
+static std::vector<std::string> SplitPath(const std::string &path) {
+  std::vector<std::string> parts;
+  size_t pos = 0, next;
+  while ((next = path.find('.', pos)) != std::string::npos) {
+    parts.push_back(path.substr(pos, next - pos));
+    pos = next + 1;
+  }
+  if (pos < path.size()) parts.push_back(path.substr(pos));
+  return parts;
+}
+
+// Resolve a field descriptor by name within an object (non-nested)
+static const reflection::Field *ResolveField(const reflection::Object *obj, const std::string &name) {
+  return FindFieldByName(obj, name);
+}
+
+// Walk a nested path on a table and return the final Table* and Field* for the last segment
+// If the final target is scalar/string, return the Field* and the table containing it via out_table.
+static const reflection::Field *ResolveNestedField(const reflection::Schema *schema,
+                                                  const reflection::Object *root_obj,
+                                                  const flatbuffers::Table *root_table,
+                                                  const std::vector<std::string> &path,
+                                                  const flatbuffers::Table *&out_table) {
+  out_table = root_table;
+  const reflection::Object *cur_obj = root_obj;
+  const flatbuffers::Table *cur_table = root_table;
+  const reflection::Field *last_field = nullptr;
+
+  for (size_t i = 0; i < path.size(); ++i) {
+    if (!cur_obj || !cur_obj->fields() || !cur_table) return nullptr;
+    const std::string &seg = path[i];
+    auto f = FindFieldByName(cur_obj, seg);
+    if (!f) return nullptr;
+    last_field = f;
+    auto btype = f->type()->base_type();
+    if (i + 1 == path.size()) {
+      // last segment
+      out_table = cur_table;
+      return last_field;
+    }
+    // intermediate segment: must be Obj
+    if (btype != reflection::Obj) return nullptr;
+    // get nested table and object metadata
+    auto nested_table = flatbuffers::GetFieldT(*cur_table, *f);
+    if (!nested_table) return nullptr;
+    int type_index = f->type()->index();
+    if (type_index < 0 || !schema->objects() || type_index >= schema->objects()->size()) return nullptr;
+    cur_obj = schema->objects()->Get(type_index);
+    cur_table = nested_table;
+  }
+  return nullptr;
+}
+
+bool SelectColumnsForFlatbuffer(const std::string &bfbs_path,
+                                const std::string &bin_path,
+                                const std::string &top_level_vector_field,
+                                const std::vector<std::string> &columns,
+                                std::vector<uint8_t> &out_buffer,
+                                std::vector<uint8_t> &out_bfbs_buffer) {
+  out_buffer.clear();
+  out_bfbs_buffer.clear();
+  std::string bfbs_data;
+  if (!flatbuffers::LoadFile(bfbs_path.c_str(), true, &bfbs_data)) {
+    std::cerr << "SelectColumns: failed to load bfbs: " << bfbs_path << "\n";
+    return false;
+  }
+  auto schema = reflection::GetSchema(bfbs_data.c_str());
+  if (!schema) {
+    std::cerr << "SelectColumns: failed to parse bfbs schema\n";
+    return false;
+  }
+  std::string data;
+  if (!flatbuffers::LoadFile(bin_path.c_str(), true, &data)) {
+    std::cerr << "SelectColumns: failed to load bin: " << bin_path << "\n";
+    return false;
+  }
+
+  const uint8_t *buf = reinterpret_cast<const uint8_t *>(data.c_str());
+  auto root_table = flatbuffers::GetAnyRoot(buf);
+  auto root_obj = schema->root_table();
+  if (!root_obj || !root_obj->fields()) {
+    std::cerr << "SelectColumns: root_obj or fields missing\n";
+    return false;
+  }
+
+  // Locate the vector-of-objects field. If the caller supplied a name, use it;
+  // otherwise fall back to the old heuristic of picking the first vector-of-objects.
+  const reflection::Field *vec_field = nullptr;
+  if (!top_level_vector_field.empty()) {
+    vec_field = FindFieldByName(root_obj, top_level_vector_field);
+    if (vec_field && !(vec_field->type() && vec_field->type()->base_type() == reflection::Vector && vec_field->type()->element() == reflection::Obj)) {
+      std::cerr << "SelectColumns: specified top-level field '" << top_level_vector_field << "' is not a vector-of-objects\n";
+      return false;
+    }
+  }
+  if (!vec_field) {
+    for (auto it = root_obj->fields()->begin(); it != root_obj->fields()->end(); ++it) {
+      auto f = *it;
+      if (!f || !f->type()) continue;
+      if (f->type()->base_type() == reflection::Vector && f->type()->element() == reflection::Obj) {
+        vec_field = f;
+        break;
+      }
+    }
+  }
+  if (!vec_field) {
+    std::cerr << "SelectColumns: no top-level vector-of-objects field found in root\n";
+    return false;
+  }
+
+  // Obtain the vector<Table> pointer
+  auto vec_any = flatbuffers::GetFieldAnyV(*root_table, *vec_field);
+  if (!vec_any) {
+    std::cerr << "SelectColumns: GetFieldAnyV returned null for vector field\n";
+    return false;
+  }
+  size_t len = vec_any->size();
+
+  // Pre-resolve requested fields in the child object descriptor (the vector's object type)
+  int child_type_index = vec_field->type()->index();
+  const reflection::Object *child_obj = nullptr;
+  if (child_type_index >= 0 && schema->objects() && child_type_index < schema->objects()->size()) {
+    child_obj = schema->objects()->Get(child_type_index);
+  }
+  if (!child_obj) {
+    std::cerr << "SelectColumns: failed to resolve child object type for vector elements\n";
+    return false;
+  }
+
+  // Pre-split column paths (may be nested like "address.city")
+  std::vector<std::vector<std::string>> col_paths;
+  col_paths.reserve(columns.size());
+  for (const auto &c : columns) col_paths.push_back(SplitPath(c));
+
+  // Build a FlatBuffer Result with rows and cols
+  flatbuffers::FlatBufferBuilder fbb;
+  std::vector<flatbuffers::Offset<selectresult::Row>> rows_off;
+  rows_off.reserve(len);
+
+  for (size_t i = 0; i < len; ++i) {
+    auto elem_ptr = flatbuffers::GetAnyVectorElemPointer<const flatbuffers::Table>(vec_any, i);
+    if (!elem_ptr) {
+      // empty row: create an empty vector<Offset<String>>
+      auto empty_vec = fbb.CreateVector<flatbuffers::Offset<flatbuffers::String>>({});
+      rows_off.push_back(selectresult::CreateRow(fbb, empty_vec));
+      continue;
+    }
+    std::vector<flatbuffers::Offset<flatbuffers::String>> col_strs;
+    col_strs.reserve(columns.size());
+    for (size_t ci = 0; ci < col_paths.size(); ++ci) {
+      const auto &path = col_paths[ci];
+      const flatbuffers::Table *value_table = nullptr;
+      const reflection::Field *field = ResolveNestedField(schema, child_obj, elem_ptr, path, value_table);
+      if (!field || !value_table) { col_strs.push_back(fbb.CreateString(std::string(""))); continue; }
+      auto btype = field->type()->base_type();
+      switch (btype) {
+        case reflection::String: {
+          auto s = flatbuffers::GetFieldS(*value_table, *field);
+          col_strs.push_back(s ? fbb.CreateString(s->str()) : 0);
+          break;
+        }
+        case reflection::Bool:
+        case reflection::Byte:
+        case reflection::UByte:
+        case reflection::Short:
+        case reflection::UShort:
+        case reflection::Int:
+        case reflection::UInt:
+        case reflection::Long:
+        case reflection::ULong: {
+          int64_t v = flatbuffers::GetAnyFieldI(*value_table, *field);
+          const char *ename = FindEnumNameForField(schema, field, v);
+          if (ename) col_strs.push_back(fbb.CreateString(std::string(ename)));
+          else col_strs.push_back(fbb.CreateString(std::to_string(v)));
+          break;
+        }
+        case reflection::Float:
+        case reflection::Double: {
+          double dv = flatbuffers::GetAnyFieldF(*value_table, *field);
+          col_strs.push_back(fbb.CreateString(std::to_string(dv)));
+          break;
+        }
+        default:
+          col_strs.push_back(fbb.CreateString(std::string("")));
+      }
+    }
+    auto vec_off = fbb.CreateVector(col_strs);
+    rows_off.push_back(selectresult::CreateRow(fbb, vec_off));
+  }
+
+  auto rows_vec = fbb.CreateVector(rows_off);
+  auto root = selectresult::CreateResult(fbb, rows_vec);
+  fbb.Finish(root);
+
+  // return buffer bytes and the generated bfbs bytes so callers can introspect in-memory
+  out_buffer.assign(fbb.GetBufferPointer(), fbb.GetBufferPointer() + fbb.GetSize());
+  // load the generated bfbs for the select_result schema into the out buffer
+  std::string gen_bfbs;
+  if (!flatbuffers::LoadFile("reflection/select_result.bfbs", true, &gen_bfbs)) {
+    std::cerr << "SelectColumns: failed to load generated select_result.bfbs\n";
+    return false;
+  }
+  out_bfbs_buffer.assign(reinterpret_cast<const uint8_t*>(gen_bfbs.c_str()), reinterpret_cast<const uint8_t*>(gen_bfbs.c_str()) + gen_bfbs.size());
+  return true;
+}
+
+int DecodeAndPrintFromBuffers(const std::string &bfbs_data, const std::vector<uint8_t> &data_buf) {
+  auto schema = reflection::GetSchema(bfbs_data.c_str());
+  if (!schema) {
+    std::cerr << "DecodeAndPrintFromBuffers: failed to parse bfbs schema\n";
+    return 1;
+  }
+  const uint8_t *buf = data_buf.empty() ? nullptr : data_buf.data();
+  if (!buf) {
+    std::cerr << "DecodeAndPrintFromBuffers: data buffer empty\n";
+    return 1;
+  }
+  auto table = flatbuffers::GetAnyRoot(buf);
+  auto root_obj = schema->root_table();
+  PrintTable(schema, root_obj, table, 0);
+  return 0;
+}

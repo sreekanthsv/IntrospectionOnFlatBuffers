@@ -31,6 +31,7 @@ set(SCHEMAS
   ${CMAKE_CURRENT_SOURCE_DIR}/schema/device.fbs
   ${CMAKE_CURRENT_SOURCE_DIR}/schema/shapeholders.fbs
   ${CMAKE_CURRENT_SOURCE_DIR}/schema/union_enum.fbs
+  ${CMAKE_CURRENT_SOURCE_DIR}/schema/select_result.fbs
 )
 
 # Expected generated headers and bfbs (flatc will produce these into the build dir)
@@ -44,6 +45,7 @@ set(GENERATED_HEADERS
   ${REFLECTION_OUT_DIR}/device_generated.h
   ${REFLECTION_OUT_DIR}/shapeholders_generated.h
   ${REFLECTION_OUT_DIR}/union_enum_generated.h
+  ${REFLECTION_OUT_DIR}/select_result_generated.h
 )
 set(GENERATED_BFBS
   ${REFLECTION_OUT_DIR}/telemetry.bfbs
@@ -53,6 +55,7 @@ set(GENERATED_BFBS
   ${REFLECTION_OUT_DIR}/device.bfbs
   ${REFLECTION_OUT_DIR}/shapeholders.bfbs
   ${REFLECTION_OUT_DIR}/union_enum.bfbs
+  ${REFLECTION_OUT_DIR}/select_result.bfbs
 )
 
 add_custom_command(
@@ -73,16 +76,21 @@ add_executable(decode_reflection src/consumers/decode_reflection.cpp src/reflect
 add_executable(create_person src/producers/create_person.cpp)
 add_executable(create_device src/producers/create_device.cpp)
 add_executable(create_union_enum src/producers/create_union_enum.cpp)
+add_executable(select_example src/consumers/select_example.cpp src/reflection/reflection_printer.cpp)
 
 add_dependencies(create_sample generate_flatbuffers)
 add_dependencies(decode_reflection generate_flatbuffers)
 add_dependencies(create_person generate_flatbuffers)
 add_dependencies(create_device generate_flatbuffers)
 add_dependencies(create_union_enum generate_flatbuffers)
+add_dependencies(select_example generate_flatbuffers)
 
 target_link_libraries(create_sample PRIVATE FlatBuffers::flatbuffers)
 target_link_libraries(decode_reflection PRIVATE FlatBuffers::flatbuffers)
 target_link_libraries(create_union_enum PRIVATE FlatBuffers::flatbuffers)
+target_link_libraries(create_person PRIVATE FlatBuffers::flatbuffers)
+target_link_libraries(create_device PRIVATE FlatBuffers::flatbuffers)
+target_link_libraries(select_example PRIVATE FlatBuffers::flatbuffers)
 
 # Simple unit test for reflection printer
 enable_testing()

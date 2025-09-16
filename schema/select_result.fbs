@@ -1,0 +1,11 @@
+namespace selectresult;
+
+table Row {
+  cols: [string];
+}
+
+table Result {
+  rows: [Row];
+}
+
+root_type Result;
