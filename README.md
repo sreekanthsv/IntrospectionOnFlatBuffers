@@ -79,6 +79,77 @@ id : 43
 shape :
 	radius : 4.14
 
+## Results and how to reproduce
+
+Run the producers and decoder in your build directory (WSL):
+
+```bash
+cd build
+make -j
+./create_sample         # writes telemetry.bin
+./create_person         # writes people.bin (vector<Person>)
+./create_device         # writes devices.bin (vector<Device>)
+./create_union_enum     # writes shapeholders.bin (vector<ShapeHolder>)
+./decode_reflection --reflect \
+	build/reflection/shapeholders.bfbs \
+	build/reflection/telemetry.bfbs \
+	build/reflection/people.bfbs \
+	build/reflection/devices.bfbs
+```
+
+Example decoder output (trimmed) observed while running the above commands:
+
+--- Decoding: reflection/shapeholders.bfbs + shapeholders.bin ---
+holders : [
+	color : 0 (Red)
+	id : 42
+	shape :
+		radius : 3.14
+	color : 1 (Green)
+	id : 43
+	shape :
+		radius : 4.14
+	...
+]
+
+--- Decoding: reflection/telemetry.bfbs + telemetry.bin ---
+device_id : "device-123"
+sensors : [
+	id : "temp"
+	unit : "C"
+	value : 23.5
+	id : "pressure"
+	unit : "kPa"
+	value : 101.3
+]
+status : "OK"
+timestamp : 1630000000
+
+--- Decoding: reflection/people.bfbs + people.bin ---
+persons : [
+	name : "Person_0"
+	id : 1001
+	age : 20
+	address : { street/city/zip }
+	...
+]
+
+--- Decoding: reflection/devices.bfbs + devices.bin ---
+devices : [
+	device_id : "dev_0"
+	online : 1
+	readings : [ { sensor/value }, ... ]
+	tags : [ "prod", "edge" ]
+	...
+]
+
+Notes:
+- The consumer prints nested tables and vectors by iterating schema metadata via reflection; enum values are resolved to names when possible.
+- The union printing is best-effort: the nested object contents are printed but the discriminator formatting can be improved (left as a follow-up).
+- If a referenced `.bin` file is missing the decoder will print a warning but continue; ensure you run the associated producer first to generate the example binary.
+
+If you'd like, I can update the README to add a single `make run-all` CMake target that builds and runs all producers before the decoder.
+
 
 ## Additional files
 
