@@ -68,16 +68,42 @@ void PrintTable(const reflection::Schema *schema,
     auto btype = field->type()->base_type();
     switch (btype) {
       case reflection::Union: {
-        // Use the helper GetUnionType(schema, parent, unionfield, table) which
-        // returns the concrete object type for the current union value.
+        // Better union printing: try to find sibling discriminator (name_type or nameType),
+        // resolve its enum name, then print concrete object type name before nested contents.
+        std::string disc_name1 = std::string(field->name()->c_str()) + "_type";
+        std::string disc_name2 = std::string(field->name()->c_str()) + "Type";
+        int64_t disc_val = -1;
+        const reflection::Field *disc_field = nullptr;
+        for (auto fit = obj->fields()->begin(); fit != obj->fields()->end(); ++fit) {
+          auto sibling = *fit;
+          if (!sibling || !sibling->name()) continue;
+          std::string sname = sibling->name()->str();
+          if (sname == disc_name1 || sname == disc_name2) {
+            disc_val = flatbuffers::GetAnyFieldI(*t, *sibling);
+            disc_field = sibling;
+            break;
+          }
+        }
+
+        if (disc_val >= 0 && disc_field) {
+          const char *ename = FindEnumNameForField(schema, disc_field, disc_val);
+          if (ename) std::cout << "(" << disc_field->name()->c_str() << ": " << ename << ")\n";
+          else std::cout << "(" << disc_field->name()->c_str() << ": " << disc_val << ")\n";
+        }
+
+        // Use the helper GetUnionType where possible to obtain the concrete object schema
         try {
           auto &member_obj = flatbuffers::GetUnionType(*schema, *obj, *field, *t);
           auto member_table = flatbuffers::GetFieldT(*t, *field);
-          std::cout << "\n";
-          if (!member_table) { std::cout << "null\n"; break; }
+          if (!member_table) { for (int i=0;i<indent;i++) std::cout<<"  "; std::cout << "null\n"; break; }
+          // print concrete object type name if available
+          if (member_obj.name() && member_obj.name()->c_str()) {
+            for (int i=0;i<indent;i++) std::cout<<"  ";
+            std::cout << "(concrete: " << member_obj.name()->c_str() << ")\n";
+          }
           PrintTable(schema, &member_obj, member_table, indent+1);
         } catch (...) {
-          // GetUnionType asserts on error; fall back to heuristic behavior
+          for (int i=0;i<indent;i++) std::cout<<"  ";
           std::cout << "<union (unresolved)>\n";
         }
         break;
